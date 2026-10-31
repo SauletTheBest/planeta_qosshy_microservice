@@ -1,26 +1,26 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
-	_ "net/smtp"
 	"os"
 	"strconv"
 
 	"gopkg.in/gomail.v2"
 )
 
-var (
-	smtpHost = os.Getenv("SMTP_HOST")
-	smtpPort = 587
-	smtpUser = os.Getenv("SMTP_USER")
-	smtpPass = os.Getenv("SMTP_PASS")
-)
+var errSMTPNotConfigured = errors.New("SMTP is not configured")
 
 // SendEmail sends an email with an optional attachment
 func SendEmail(to, subject, body, attachmentPath string) error {
+	host, user, pass := os.Getenv("SMTP_HOST"), os.Getenv("SMTP_USER"), os.Getenv("SMTP_PASS")
+	if host == "" || user == "" {
+		return errSMTPNotConfigured
+	}
+
 	m := gomail.NewMessage()
-	m.SetHeader("From", smtpUser)
+	m.SetHeader("From", user)
 	m.SetHeader("To", to)
 	m.SetHeader("Subject", subject)
 	m.SetBody("text/plain", body)
@@ -35,7 +35,7 @@ func SendEmail(to, subject, body, attachmentPath string) error {
 		port = 587
 	}
 
-	d := gomail.NewDialer(smtpHost, port, smtpUser, smtpPass)
+	d := gomail.NewDialer(host, port, user, pass)
 
 	if err := d.DialAndSend(m); err != nil {
 		log.Println("Email send error:", err)
@@ -44,20 +44,18 @@ func SendEmail(to, subject, body, attachmentPath string) error {
 	return nil
 }
 
-// SendReceiptEmail sends a receipt email with the PDF attachment
-func SendReceiptEmail(email string, transactionID uint, amount float64) error {
-	receiptPath := fmt.Sprintf("receipts/receipt_%d.pdf", transactionID)
+// SendReceiptEmail sends the receipt PDF to the buyer.
+func SendReceiptEmail(to string, p Payment, receiptPath string) error {
+	subject := "Чек об оплате — Qosshy Pay"
+	body := fmt.Sprintf(`Здравствуйте!
 
-	subject := "Your Payment Receipt"
-	body := fmt.Sprintf(`Dear Customer,
+Оплата прошла успешно, чек во вложении.
 
-Thank you for your purchase. Please find your payment receipt attached.
+Платёж: %s
+Сумма: %s ₸
+Карта: %s
 
-Transaction ID: %d
-Amount Paid: $%.2f
+Qosshy Pay (тестовый платёжный сервис)`, p.ID, formatTenge(p.AmountTiyn), maskCard(p.CardLast4))
 
-Best Regards,
-Your Company`, transactionID, amount)
-
-	return SendEmail(email, subject, body, receiptPath)
+	return SendEmail(to, subject, body, receiptPath)
 }

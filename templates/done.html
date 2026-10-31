@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.title}} — Qosshy Pay</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f4f5f7; margin: 0; color: #111; }
+    .card { max-width: 420px; margin: 48px auto; background: #fff; border-radius: 16px; padding: 28px;
+            box-shadow: 0 6px 24px rgba(0,0,0,.08); text-align: center; }
+    .brand { font-weight: 800; letter-spacing: .5px; color: #1a56db; }
+    a { display: inline-block; margin-top: 18px; padding: 10px 18px; border-radius: 10px; background: #1a56db;
+        color: #fff; text-decoration: none; font-weight: 700; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">QOSSHY PAY · тестовый банк</div>
+  <h2>{{.title}}</h2>
+  {{if .text}}<p>{{.text}}</p>{{end}}
+  {{if .returnURL}}<a href="{{.returnURL}}">Вернуться в магазин</a>{{end}}
+</div>
+</body>
+</html>
