@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Оплата — Qosshy Pay</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f4f5f7; margin: 0; color: #111; }
+    .card { max-width: 420px; margin: 48px auto; background: #fff; border-radius: 16px; padding: 28px;
+            box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+    .brand { font-weight: 800; letter-spacing: .5px; color: #1a56db; }
+    .amount { font-size: 2rem; font-weight: 700; margin: 12px 0 4px; }
+    .muted { color: #6b7280; font-size: .9rem; }
+    label { display: block; font-size: .85rem; font-weight: 600; margin: 14px 0 6px; }
+    input { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 1rem; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    button { width: 100%; margin-top: 20px; padding: 12px; border: 0; border-radius: 10px; background: #1a56db;
+             color: #fff; font-size: 1rem; font-weight: 700; cursor: pointer; }
+    .error { background: #fde8e8; color: #9b1c1c; padding: 10px 12px; border-radius: 8px; margin-top: 12px; }
+    .test { margin-top: 18px; font-size: .8rem; background: #fdf6b2; padding: 10px 12px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">QOSSHY PAY · тестовый банк</div>
+  <div class="amount">{{tenge .p.AmountTiyn}} ₸</div>
+  <div class="muted">{{.p.Description}}</div>
+  <div class="muted">Оплатить до {{.p.ExpiresAt.Local.Format "15:04"}}</div>
+
+  {{if .error}}<div class="error">{{.error}}</div>{{end}}
+
+  <form method="POST" action="/pay/{{.p.ID}}" autocomplete="off">
+    <label for="card_number">Номер карты</label>
+    <input id="card_number" name="card_number" inputmode="numeric" maxlength="23" placeholder="4242 4242 4242 4242" required>
+    <div class="row">
+      <div>
+        <label for="expiry">Срок (ММ/ГГ)</label>
+        <input id="expiry" name="expiry" maxlength="5" placeholder="12/30" required>
+      </div>
+      <div>
+        <label for="cvv">CVV</label>
+        <input id="cvv" name="cvv" inputmode="numeric" maxlength="4" placeholder="123" required>
+      </div>
+    </div>
+    <label for="holder">Имя владельца</label>
+    <input id="holder" name="holder" maxlength="60" placeholder="IVAN IVANOV" required>
+    <button type="submit">Оплатить {{tenge .p.AmountTiyn}} ₸</button>
+  </form>
+
+  <div class="test">
+    Это тестовый банк, настоящие деньги не списываются.<br>
+    <b>4242 4242 4242 4242</b> — успешная оплата<br>
+    <b>4000 0000 0000 0002</b> — банк отказал<br>
+    <b>4000 0000 0000 9995</b> — недостаточно средств<br>
+    Срок — любой будущий, CVV — любые 3 цифры.
+  </div>
+</div>
+</body>
+</html>
