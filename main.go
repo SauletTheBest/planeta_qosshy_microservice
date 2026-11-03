@@ -6,6 +6,7 @@ import (
 	"github.com/jung-kurt/gofpdf"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -32,19 +33,7 @@ type PaymentResponse struct {
 func ProcessPayment(c *gin.Context) {
 	var request PaymentRequest
 
-	fmt.Printf("User ID: %v\n", request.TransactionID)
-	fmt.Printf("Card Name: %s\n", request.Amount)
-	fmt.Printf("Card Number: %s\n", request.Expiry)
-	fmt.Printf("Expiry Date: %s\n", request.Model)
-	fmt.Printf("CVV: %s\n", request.UserName)
-	fmt.Printf("Car ID: %d\n", request.PaymentMethod)
-	fmt.Printf("Amount: %.2f\n", request.Quantity)
-	fmt.Printf("Amount: %.2f\n", request.TotalAmount)
-	fmt.Printf("Amount: %.2f\n", request.PaymentMethod)
-	fmt.Printf("Amount: %.2f\n", request.Status)
-	fmt.Printf("Email: %s\n", request.Email)
-	fmt.Printf("CreatedAt: %s\n", request.CreatedAt)
-
+	// Card data is never printed to logs: anyone with access to the logs would see it.
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
@@ -71,9 +60,8 @@ func generateReceipt(request PaymentRequest) {
 	pdf.SetFont("Arial", "", 12)
 	addLine(pdf, "Transaction ID:", fmt.Sprintf("%d", request.TransactionID))
 	addLine(pdf, "Amount Paid:", fmt.Sprintf("$%.2f", request.Amount))
-	addLine(pdf, "Card Number:", request.CardNumber)
-	addLine(pdf, "Expiry Date:", request.Expiry)
-	addLine(pdf, "Car Model:", request.Model)
+	addLine(pdf, "Card Number:", maskCard(request.CardNumber))
+	addLine(pdf, "Item:", request.Model)
 	addLine(pdf, "User Name:", request.UserName)
 	addLine(pdf, "Price per Unit:", fmt.Sprintf("$%.2f", request.Price))
 	addLine(pdf, "Quantity:", fmt.Sprintf("%d", request.Quantity))
@@ -96,6 +84,20 @@ func generateReceipt(request PaymentRequest) {
 	}
 
 	fmt.Println("Receipt generated:", filename)
+}
+
+// maskCard keeps only the last 4 digits, like a real bank receipt.
+func maskCard(number string) string {
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1 // drop spaces and dashes
+	}, number)
+	if len(digits) < 4 {
+		return "****"
+	}
+	return "**** **** **** " + digits[len(digits)-4:]
 }
 
 func addLine(pdf *gofpdf.Fpdf, label, value string) {
