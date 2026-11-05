@@ -1,0 +1,29 @@
+# Runs on every pull request and on every push to main.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go vet
+        run: go vet ./...
+      # -race finds two goroutines touching the same data without a lock
+      # (the store and the webhook sender are used by many requests at once).
+      - name: Tests (race detector on)
+        run: go test -race -count=1 ./...
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the production image
+        run: docker build -t qosshy-pay:ci .

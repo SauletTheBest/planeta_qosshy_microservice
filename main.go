@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/subtle"
 	"embed"
 	"errors"
@@ -8,9 +9,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +29,7 @@ type config struct {
 	WebhookSecret      string // this service signs webhooks with it, the shop checks the signature
 	MerchantWebhookURL string // where events are sent; fixed here, not taken from requests
 	MerchantSiteURL    string // return_url must start with it
+	DataFile           string // payments are saved here; "" = memory only
 }
 
 func loadConfig() config {
@@ -36,6 +40,7 @@ func loadConfig() config {
 		WebhookSecret:      os.Getenv("WEBHOOK_SECRET"),
 		MerchantWebhookURL: os.Getenv("MERCHANT_WEBHOOK_URL"),
 		MerchantSiteURL:    strings.TrimRight(os.Getenv("MERCHANT_SITE_URL"), "/"),
+		DataFile:           os.Getenv("DATA_FILE"),
 	}
 	if len(cfg.APIKey) < 32 || len(cfg.WebhookSecret) < 32 {
 		log.Fatal("API_KEY and WEBHOOK_SECRET must be set and at least 32 characters long")
@@ -73,16 +78,51 @@ func newServer(cfg config) *server {
 
 func main() {
 	cfg := loadConfig()
-	log.Printf("Qosshy Pay (test bank) listening on :%s, public URL %s", cfg.Port, cfg.PublicURL)
-	if err := newServer(cfg).router().Run(":" + cfg.Port); err != nil {
-		log.Fatal(err)
+	s := newServer(cfg)
+	st, err := openStore(cfg.DataFile)
+	if err != nil {
+		log.Fatalf("DATA_FILE %s: %v", cfg.DataFile, err)
+	}
+	s.store = st
+
+	// SIGTERM is what `docker stop` sends; Ctrl+C is os.Interrupt.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	srv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           s.router(),
+		ReadHeaderTimeout: 10 * time.Second, // see the shop's main.go: "slowloris"
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	go func() {
+		log.Printf("Qosshy Pay (test bank) listening on :%s, public URL %s, data %q", cfg.Port, cfg.PublicURL, cfg.DataFile)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	}()
+
+	<-ctx.Done()
+	// Let card forms that are being submitted right now finish. Webhooks still waiting for
+	// a retry are lost on restart; a real provider keeps them in a database ("outbox").
+	log.Println("shutting down (at most 10 s)")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Println("shutdown:", err)
 	}
 }
 
 func (s *server) router() *gin.Engine {
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{SkipPaths: []string{"/healthz"}}))
 	r.SetHTMLTemplate(template.Must(
 		template.New("").Funcs(template.FuncMap{"tenge": formatTenge}).ParseFS(templatesFS, "templates/*.html")))
+
+	r.GET("/healthz", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
 
 	// Server-to-server API for the shop.
 	api := r.Group("/api/v1", s.requireAPIKey)
