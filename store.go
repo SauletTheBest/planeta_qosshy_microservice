@@ -18,6 +18,7 @@ const (
 	StatusPending   Status = "pending"
 	StatusSucceeded Status = "succeeded"
 	StatusFailed    Status = "failed"
+	StatusRefunded  Status = "refunded" // the money went back to the card
 )
 
 type Payment struct {
@@ -35,14 +36,37 @@ type Payment struct {
 	CardLast4     string // the only part of the card that is kept
 	FailureReason string
 	ReceiptURL    string
+	RefundedAt    time.Time // zero unless refunded
 }
 
 var (
-	ErrNotFound   = errors.New("payment not found")
-	ErrNotPending = errors.New("payment is already completed")
-	ErrExpired    = errors.New("payment session has expired")
-	ErrKeyReused  = errors.New("idempotency key reused with different parameters")
+	ErrNotFound      = errors.New("payment not found")
+	ErrNotPending    = errors.New("payment is already completed")
+	ErrExpired       = errors.New("payment session has expired")
+	ErrKeyReused     = errors.New("idempotency key reused with different parameters")
+	ErrNotRefundable = errors.New("only a succeeded payment can be refunded")
 )
+
+// refund gives the whole amount back. A second call for the same payment changes
+// nothing and reports already == true: the shop may retry after a timeout without
+// the customer getting the money twice.
+func (s *store) refund(id string, now time.Time) (p Payment, already bool, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	stored, ok := s.byID[id]
+	switch {
+	case !ok:
+		return Payment{}, false, ErrNotFound
+	case stored.Status == StatusRefunded:
+		return *stored, true, nil
+	case stored.Status != StatusSucceeded:
+		return *stored, false, ErrNotRefundable
+	}
+	stored.Status = StatusRefunded
+	stored.RefundedAt = now
+	return *stored, false, nil
+}
 
 type store struct {
 	mu        sync.Mutex // every field below is used by many request goroutines at once

@@ -231,3 +231,52 @@ func TestReceiptPathTraversal(t *testing.T) {
 		}
 	}
 }
+
+func TestRefund(t *testing.T) {
+	s, shop, h := setup(t)
+	auth := map[string]string{"Authorization": "Bearer " + testAPIKey, "Idempotency-Key": "r1"}
+
+	id := createPayment(t, h, "to-refund")["payment_id"].(string)
+	// Money that was never taken can't be given back.
+	if rec := do(h, "POST", "/api/v1/payments/"+id+"/refund", "", auth); rec.Code != http.StatusConflict {
+		t.Fatalf("refund of a pending payment: got %d, want 409", rec.Code)
+	}
+
+	pay(h, id, "4242 4242 4242 4242")
+	if ev := shop.next(t); ev.Type != "payment.succeeded" {
+		t.Fatalf("want payment.succeeded first, got %s", ev.Type)
+	}
+
+	if rec := do(h, "POST", "/api/v1/payments/"+id+"/refund", "", map[string]string{"Authorization": "Bearer wrong"}); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("refund without the API key: got %d, want 401", rec.Code)
+	}
+
+	rec := do(h, "POST", "/api/v1/payments/"+id+"/refund", "", auth)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"status":"refunded"`) {
+		t.Fatalf("refund: %d %s", rec.Code, rec.Body)
+	}
+	ev := shop.next(t)
+	if ev.Type != "payment.refunded" || ev.PaymentID != id || ev.AmountTiyn != 1500050 || ev.MerchantReference != "57" {
+		t.Fatalf("refund webhook: %+v", ev)
+	}
+
+	// The shop retries after a timeout: same answer, no second webhook, no second refund.
+	if rec := do(h, "POST", "/api/v1/payments/"+id+"/refund", "", auth); rec.Code != http.StatusOK {
+		t.Fatalf("repeated refund: got %d, want 200", rec.Code)
+	}
+	select {
+	case ev := <-shop.events:
+		t.Fatalf("a repeated refund sent another webhook: %+v", ev)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if p, _ := s.store.get(id); p.Status != StatusRefunded || p.RefundedAt.IsZero() {
+		t.Fatalf("stored payment: %+v", p)
+	}
+	if rec := do(h, "GET", "/pay/"+id, "", nil); !strings.Contains(rec.Body.String(), "Деньги возвращены") {
+		t.Fatalf("payment page after refund should say so")
+	}
+
+	if rec := do(h, "POST", "/api/v1/payments/pay_nope/refund", "", auth); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown payment: got %d, want 404", rec.Code)
+	}
+}

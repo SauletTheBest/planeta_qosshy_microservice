@@ -87,6 +87,7 @@ func (s *server) router() *gin.Engine {
 	// Server-to-server API for the shop.
 	api := r.Group("/api/v1", s.requireAPIKey)
 	api.POST("/payments", s.createPayment)
+	api.POST("/payments/:id/refund", s.refundPayment)
 
 	// Pages for the buyer's browser.
 	r.GET("/pay/:id", s.payPage)
@@ -176,6 +177,35 @@ func (s *server) createPayment(c *gin.Context) {
 		"status":      p.Status,
 		"expires_at":  p.ExpiresAt,
 	})
+}
+
+// refundPayment: POST /api/v1/payments/:id/refund — the whole amount, once.
+// Repeating the call is safe, so the shop needs no Idempotency-Key here.
+func (s *server) refundPayment(c *gin.Context) {
+	p, already, err := s.store.refund(c.Param("id"), s.now())
+	switch {
+	case errors.Is(err, ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	case errors.Is(err, ErrNotRefundable):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "status": p.Status})
+		return
+	}
+
+	if !already {
+		log.Printf("payment %s refunded (%d tiyn)", p.ID, p.AmountTiyn)
+		s.webhooks.send(Event{
+			ID:                newID("evt_"),
+			Type:              "payment.refunded",
+			PaymentID:         p.ID,
+			MerchantReference: p.MerchantReference,
+			AmountTiyn:        p.AmountTiyn,
+			Currency:          p.Currency,
+			CardLast4:         p.CardLast4,
+			CreatedAt:         p.RefundedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"payment_id": p.ID, "status": p.Status, "refunded_at": p.RefundedAt})
 }
 
 func (s *server) payPage(c *gin.Context) {
@@ -268,8 +298,11 @@ var failureText = map[string]string{
 
 func (s *server) renderDone(c *gin.Context, p Payment) {
 	title, text := "Оплата прошла успешно", "Можно вернуться в магазин."
-	if p.Status == StatusFailed {
+	switch p.Status {
+	case StatusFailed:
 		title, text = "Оплата отклонена", failureText[p.FailureReason]
+	case StatusRefunded:
+		title, text = "Деньги возвращены", "Магазин вернул оплату на вашу карту."
 	}
 	c.HTML(http.StatusOK, "done.html", gin.H{"title": title, "text": text, "returnURL": p.ReturnURL})
 }

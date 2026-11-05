@@ -16,7 +16,7 @@ import (
 // ("I paid, honestly!"): only this signed server-to-server message marks an order paid.
 type Event struct {
 	ID                string    `json:"id"`
-	Type              string    `json:"type"` // payment.succeeded | payment.failed
+	Type              string    `json:"type"` // payment.succeeded | payment.failed | payment.refunded
 	PaymentID         string    `json:"payment_id"`
 	MerchantReference string    `json:"merchant_reference"`
 	AmountTiyn        int64     `json:"amount_tiyn"`
