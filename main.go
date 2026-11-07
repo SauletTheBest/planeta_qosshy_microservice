@@ -107,8 +107,9 @@ func main() {
 	<-ctx.Done()
 	// Let card forms that are being submitted right now finish. Webhooks still waiting for
 	// a retry are lost on restart; a real provider keeps them in a database ("outbox").
-	log.Println("shutting down (at most 10 s)")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// 7 s: well inside the 10 s Docker waits before it kills the process.
+	log.Println("shutting down (at most 7 s)")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Println("shutdown:", err)
