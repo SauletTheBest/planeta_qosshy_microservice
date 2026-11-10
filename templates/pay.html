@@ -29,23 +29,43 @@
 
   {{if .error}}<div class="error">{{.error}}</div>{{end}}
 
-  <form method="POST" action="/pay/{{.p.ID}}" autocomplete="off">
+  <!-- autocomplete="cc-…": the browser may offer a saved card, as on real payment pages. -->
+  <form method="POST" action="/pay/{{.p.ID}}">
     <label for="card_number">Номер карты</label>
-    <input id="card_number" name="card_number" inputmode="numeric" maxlength="23" placeholder="4242 4242 4242 4242" required>
+    <input id="card_number" name="card_number" inputmode="numeric" autocomplete="cc-number"
+           maxlength="23" placeholder="4242 4242 4242 4242" required>
     <div class="row">
       <div>
         <label for="expiry">Срок (ММ/ГГ)</label>
-        <input id="expiry" name="expiry" maxlength="5" placeholder="12/30" required>
+        <input id="expiry" name="expiry" inputmode="numeric" autocomplete="cc-exp" maxlength="5" placeholder="12/30" required>
       </div>
       <div>
         <label for="cvv">CVV</label>
-        <input id="cvv" name="cvv" inputmode="numeric" maxlength="4" placeholder="123" required>
+        <input id="cvv" name="cvv" inputmode="numeric" autocomplete="cc-csc" maxlength="4" placeholder="123" required>
       </div>
     </div>
     <label for="holder">Имя владельца</label>
-    <input id="holder" name="holder" maxlength="60" placeholder="IVAN IVANOV" required>
+    <input id="holder" name="holder" autocomplete="cc-name" maxlength="60" placeholder="IVAN IVANOV" required>
     <button type="submit">Оплатить {{tenge .p.AmountTiyn}} ₸</button>
   </form>
+  <script>
+    // Formatting only makes typing easier. The SERVER still checks everything
+    // (validateCard): a script can be switched off or faked, so it is never trusted.
+    const onlyDigits = (s, max) => s.replace(/\D/g, '').slice(0, max);
+    const num = document.getElementById('card_number');
+    num.addEventListener('input', () => {             // 4242424242424242 → 4242 4242 4242 4242
+      num.value = onlyDigits(num.value, 19).replace(/(\d{4})(?=\d)/g, '$1 ');
+    });
+    const exp = document.getElementById('expiry');
+    exp.addEventListener('input', () => {             // 1230 → 12/30
+      const d = onlyDigits(exp.value, 4);
+      exp.value = d.length > 2 ? d.slice(0, 2) + '/' + d.slice(2) : d;
+    });
+    const cvv = document.getElementById('cvv');
+    cvv.addEventListener('input', () => { cvv.value = onlyDigits(cvv.value, 4); });
+    const holder = document.getElementById('holder');
+    holder.addEventListener('input', () => { holder.value = holder.value.toUpperCase(); });
+  </script>
 
   <div class="test">
     Это тестовый банк, настоящие деньги не списываются.<br>
